@@ -1,0 +1,261 @@
+<template>
+  <div class="app-container">
+    <div class="filter-container">
+      <el-input
+        v-model="queryOldName"
+        placeholder="姓名"
+        style="width: 150px"
+        class="filter-item"
+        @keyup.enter.native="handleFilter"
+      />
+      <el-date-picker
+        v-model="listQuery.start"
+        type="date"
+        placeholder="开始时间"
+      />
+      <el-date-picker
+        v-model="listQuery.stop"
+        type="date"
+        placeholder="结束时间"
+      />
+      <el-button
+        v-waves
+        class="filter-item"
+        type="primary"
+        icon="el-icon-search"
+        @click="handleFilter"
+      >
+        Search
+      </el-button>
+    </div>
+    <!-- 下面是列表 -->
+    <el-table
+      :key="tableKey"
+      v-loading="listLoading"
+      :data="list"
+      border
+      fit
+      highlight-current-row
+      style="width: 100%"
+      @sort-change="sortChange"
+    >
+      <el-table-column
+        label="序号"
+        prop="id"
+        sortable="custom"
+        align="center"
+        width="80"
+        :class-name="getSortClass('id')"
+      >
+        <template slot-scope="{ $index }">
+          <span>{{ $index + 1 }}</span>
+        </template>
+      </el-table-column>
+      <el-table-column label="姓名" width="80px" align="center">
+        <span>{{ oldName }}</span>
+      </el-table-column>
+
+      <el-table-column label="日期" width="100px" align="center">
+        <template slot-scope="{ row }">
+          <span>{{ row.dayTime | dateFilter("YYYY-MM-DD") }}</span>
+        </template>
+      </el-table-column>
+      <!-- <el-table-column label="开始时间" align="center" width="120">
+        <template slot-scope="{ row }">
+          <span>{{ row.start | dateFilter("HH:mm:ss") }}</span>
+        </template>
+      </el-table-column>
+      <el-table-column
+        label="结束时间"
+        class-name="status-col"
+        width="120"
+        align="center"
+      >
+        <template slot-scope="{ row }">
+          <span>{{ row.stop | dateFilter("HH:mm:ss") }}</span>
+        </template>
+      </el-table-column> -->
+      <el-table-column label="评估分数" width="80px" align="center">
+        <template slot-scope="{ row }">
+          <span>{{ row.score }}</span>
+        </template>
+      </el-table-column>
+      <el-table-column label="状态" width="80px" align="center">
+        <template slot-scope="{ row }">
+          <span>{{ row.status }}</span>
+        </template>
+      </el-table-column>
+    </el-table>
+
+    <pagination
+      v-show="total > 0"
+      :total="total"
+      :page.sync="listQuery.page"
+      :limit.sync="listQuery.limit"
+      @pagination="getList"
+    />
+  </div>
+</template>
+
+<script>
+import { getOldList, getRecRowData, getOldId } from "@/api/datashow";
+import waves from "@/directive/waves"; // waves directive
+import { parseTime } from "@/utils";
+import Pagination from "@/components/Pagination"; // secondary package based on el-pagination
+import moment from "moment";
+import user from "@/store/modules/user";
+import store from "@/store";
+
+export default {
+  name: "RecRowData",
+  components: { Pagination },
+  directives: { waves },
+  filters: {
+    statusFilter(status) {
+      const statusMap = {
+        published: "success",
+        draft: "info",
+        deleted: "danger",
+      };
+      return statusMap[status];
+    },
+    dateFilter: function (input, fmtstring) {
+      return moment(input).format(fmtstring);
+    },
+  },
+  data() {
+    return {
+      tableKey: 0,
+      list: null,
+      total: 0,
+      listLoading: true,
+      listQuery: {
+        oldId: "",
+        limit: 10,
+        page: 1,
+        sort: "",
+        start: new Date(new Date().setDate(new Date().getDate() - 24)),
+        stop: new Date(),
+      },
+      oldName: "",
+      queryOldName: "",
+      importanceOptions: [1, 2, 3],
+      showReviewer: false,
+      dialogFormVisible: false,
+      dialogStatus: "",
+      dialogPvVisible: false,
+      pvData: [],
+      downloadLoading: false,
+    };
+  },
+  created() {
+    this.getList();
+  },
+  computed: {
+    currentOldId() {
+      this.queryOldName = "";
+      return store.state.datashow.currentOldId;
+    },
+  },
+  watch: {
+    currentOldId: function (val) {
+      // console.log(this.queryOldName)
+      this.getList();
+      // this.queryOldName = store.state.currentOldName
+    },
+  },
+  methods: {
+    // getList() {
+    //   this.listLoading = true;
+    //   this.listQuery.oldId = store.getters.currentOldId;
+    //   this.oldName = store.getters.currentOldName;
+    //   getRecRowData(this.listQuery).then((response) => {
+    //     this.list = response.data.oldInfo;
+    //     this.total = response.data.total;
+    //     // Just to simulate the time of the request
+    //     setTimeout(() => {
+    //       this.listLoading = false;
+    //     }, 1.5 * 1000);
+    //   });
+    // },
+    getList() {
+      this.listLoading = true;
+      this.listQuery.oldId = store.getters.currentOldId;
+      this.oldName = store.getters.currentOldName;
+      if (!(this.listQuery.oldId || this.queryOldName)) {
+        this.list = [];
+        this.total = 0;
+        this.listLoading = false;
+        return;
+      }
+      if (this.queryOldName) {
+        this.oldName = JSON.parse(JSON.stringify(this.queryOldName));
+        getOldId({
+          oldname: this.queryOldName,
+        }).then((response) => {
+          this.listQuery.oldId = response.data.userId.user.id;
+          this.oldName = this.queryOldName;
+
+          getRecRowData(this.listQuery).then((response) => {
+            this.list = response.data.oldInfo;
+            this.total = response.data.total;
+            // Just to simulate the time of the request
+            setTimeout(() => {
+              this.listLoading = false;
+            }, 0.8 * 1000);
+          });
+        });
+      } else {
+        this.queryOldName = store.getters.currentOldName;
+        getRecRowData(this.listQuery).then((response) => {
+          this.list = response.data.oldInfo;
+          this.total = response.data.total;
+          // Just to simulate the time of the request
+          setTimeout(() => {
+            this.listLoading = false;
+          }, 0.8 * 1000);
+        });
+      }
+      // this.queryOldName = "";
+    },
+    handleFilter() {
+      this.listQuery.page = 1;
+      this.getList();
+    },
+    sortChange(data) {
+      const { prop, order } = data;
+      if (prop === "id") {
+        this.sortByID(order);
+      }
+    },
+    sortByID(order) {
+      if (order === "ascending") {
+        this.listQuery.sort = "+id";
+      } else {
+        this.listQuery.sort = "-id";
+      }
+      this.handleFilter();
+    },
+
+    getSortClass: function (key) {
+      const sort = this.listQuery.sort;
+      return sort === `+${key}` ? "ascending" : "descending";
+    },
+  },
+};
+</script>
+
+<style>
+.addSingleOldDialog-container {
+  width: 300px;
+  margin: 0 auto;
+}
+.addSingleOldDialog-input {
+  width: 220px;
+}
+.dialogBox-container {
+  width: 1500px;
+  margin: 0 auto;
+}
+</style>
+
